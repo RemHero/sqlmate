@@ -1,0 +1,5 @@
+{
+  "insert": "Core operation validation should include inserts that establish the expected result shape and boundary conditions.",
+  "query validation": "Each assertion query should map to a clear expected outcome, such as row count, exact values, metadata visibility, or expected error code."
+}
+

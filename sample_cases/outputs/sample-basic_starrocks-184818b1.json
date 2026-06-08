@@ -1,0 +1,194 @@
+{
+  "planner_output": {
+    "global_plan": {
+      "task_goal": "为 StarRocks 的基础建表、插入和查询功能生成一套可执行 SQL 用例。",
+      "db_dialect": "starrocks",
+      "feature_under_test": "基础 DDL 与 DML 功能回归",
+      "must_cover": [
+        "positive path",
+        "negative path",
+        "cleanup"
+      ],
+      "required_setup_objects": [
+        {
+          "type": "database",
+          "name": "basic_starrocks_db"
+        }
+      ],
+      "ddl_topics_needed": [
+        "create table"
+      ],
+      "core_topics_needed": [
+        "insert",
+        "query validation"
+      ],
+      "validation_strategy": [
+        "assert row count",
+        "assert error path"
+      ],
+      "sql_contract": {
+        "must_be_executable": true,
+        "must_include_cleanup": true,
+        "must_avoid_pseudo_sql": true
+      },
+      "planning_considerations": [
+        "mock sample run"
+      ],
+      "risks": [
+        "prompt content still placeholder"
+      ]
+    },
+    "setup_plan": {
+      "stage": "SETUP",
+      "objective": "prepare objects",
+      "test_focus": [],
+      "input_contract": [],
+      "output_contract": [],
+      "required_topics": [
+        "session setup"
+      ],
+      "optional_topics": [],
+      "assumptions": [],
+      "knowledge_gaps": [],
+      "evidence_requirements": [
+        "confirm setup syntax"
+      ]
+    },
+    "ddl_plan": {
+      "stage": "DDL",
+      "objective": "create required tables",
+      "test_focus": [],
+      "input_contract": [],
+      "output_contract": [],
+      "required_topics": [
+        "create table"
+      ],
+      "optional_topics": [],
+      "assumptions": [],
+      "knowledge_gaps": [],
+      "evidence_requirements": [
+        "confirm DDL syntax"
+      ]
+    },
+    "core_plan": {
+      "stage": "CORE",
+      "objective": "insert and validate",
+      "test_focus": [],
+      "input_contract": [],
+      "output_contract": [],
+      "required_topics": [
+        "insert",
+        "query validation"
+      ],
+      "optional_topics": [],
+      "assumptions": [],
+      "knowledge_gaps": [],
+      "evidence_requirements": [
+        "confirm DML and query syntax"
+      ]
+    },
+    "cached_knowledge": {
+      "setup": {
+        "stage": "setup",
+        "requested_topics": [],
+        "found_items": [],
+        "missing_topics": [],
+        "distilled_summary": "mock setup evidence",
+        "related_topics": [],
+        "retrieval_rounds": []
+      },
+      "ddl": {
+        "stage": "ddl",
+        "requested_topics": [],
+        "found_items": [],
+        "missing_topics": [],
+        "distilled_summary": "mock ddl evidence",
+        "related_topics": [],
+        "retrieval_rounds": []
+      },
+      "core": {
+        "stage": "core",
+        "requested_topics": [],
+        "found_items": [],
+        "missing_topics": [],
+        "distilled_summary": "mock core evidence",
+        "related_topics": [],
+        "retrieval_rounds": []
+      }
+    },
+    "debate_summary": [
+      "mock sample debate"
+    ]
+  },
+  "setup_result": {
+    "stage": "SETUP",
+    "plan_summary": "SETUP mock summary",
+    "knowledge_used": {
+      "stage": "setup",
+      "requested_topics": [],
+      "found_items": [],
+      "missing_topics": [],
+      "distilled_summary": "SETUP mock evidence",
+      "related_topics": [],
+      "retrieval_rounds": []
+    },
+    "generated_sql": "CREATE DATABASE IF NOT EXISTS basic_starrocks_db;",
+    "validation_notes": [
+      "mock run"
+    ],
+    "unresolved_risks": [],
+    "evidence_checklist": [
+      "SETUP evidence confirmed in mock mode"
+    ]
+  },
+  "ddl_result": {
+    "stage": "DDL",
+    "plan_summary": "DDL mock summary",
+    "knowledge_used": {
+      "stage": "ddl",
+      "requested_topics": [],
+      "found_items": [],
+      "missing_topics": [],
+      "distilled_summary": "DDL mock evidence",
+      "related_topics": [],
+      "retrieval_rounds": []
+    },
+    "generated_sql": "CREATE TABLE basic_starrocks_db.basic_starrocks_t1(id INT, name VARCHAR(32));",
+    "validation_notes": [
+      "mock run"
+    ],
+    "unresolved_risks": [],
+    "evidence_checklist": [
+      "DDL evidence confirmed in mock mode"
+    ]
+  },
+  "core_result": {
+    "stage": "CORE",
+    "plan_summary": "CORE mock summary",
+    "knowledge_used": {
+      "stage": "core",
+      "requested_topics": [],
+      "found_items": [],
+      "missing_topics": [],
+      "distilled_summary": "CORE mock evidence",
+      "related_topics": [],
+      "retrieval_rounds": []
+    },
+    "generated_sql": "INSERT INTO basic_starrocks_db.basic_starrocks_t1 VALUES (1, 'alpha');\nSELECT COUNT(*) FROM basic_starrocks_db.basic_starrocks_t1;\nDROP TABLE IF EXISTS basic_starrocks_db.basic_starrocks_t1;\nDROP DATABASE IF EXISTS basic_starrocks_db;",
+    "validation_notes": [
+      "mock run"
+    ],
+    "unresolved_risks": [],
+    "evidence_checklist": [
+      "CORE evidence confirmed in mock mode"
+    ]
+  },
+  "merged_sql": "-- SETUP\nCREATE DATABASE IF NOT EXISTS basic_starrocks_db;\n\n-- DDL\nCREATE TABLE basic_starrocks_db.basic_starrocks_t1(id INT, name VARCHAR(32));\n\n-- CORE\nINSERT INTO basic_starrocks_db.basic_starrocks_t1 VALUES (1, 'alpha');\nSELECT COUNT(*) FROM basic_starrocks_db.basic_starrocks_t1;\nDROP TABLE IF EXISTS basic_starrocks_db.basic_starrocks_t1;\nDROP DATABASE IF EXISTS basic_starrocks_db;",
+  "execution": {
+    "success": true,
+    "executor_type": "mock",
+    "message": "Mock executor accepted the SQL bundle.",
+    "failed_stage": null,
+    "errors": []
+  }
+}

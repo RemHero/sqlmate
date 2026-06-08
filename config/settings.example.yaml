@@ -1,0 +1,106 @@
+app:
+  name: sqlmate
+  prompts_dir: node_prompts
+  knowledge_dir: knowledge
+  log_dir: logs
+  output_dir: output
+
+observability:
+  workflow_name: SqlMate Workflow
+  enable_sdk_tracing: false
+  openai_trace_api_key: ${OPENAI_TRACE_API_KEY:-}
+  include_sensitive_data: false
+
+planner:
+  debate_rounds: 1
+  max_turns: 12
+  max_output_tokens: 32768
+  max_tool_rounds: 2
+
+knowledge:
+  max_matches_per_topic: 3
+  max_tool_rounds: 6
+  enable_claude_index: true
+  claude_command: claude
+  claude_permission_mode: bypassPermissions
+  claude_use_add_dir: true
+  claude_timeout_seconds: 600
+  claude_max_output_chars: 40000
+  doc_knowledge_dir: /home/remhero/shared/ai/SqlMate/worflow/kfzn
+  doc_knowledge_dirs:
+    - /home/remhero/shared/ai/SqlMate/worflow/kfzn
+    - /home/remhero/shared/ai/SqlMate/worflow/kfzn
+  sql_examples_dir: knowledge/sql_examples_empty
+  max_tool_found_items: 10
+  max_tool_item_content_chars: 3000
+
+executor:
+  type: mock
+  max_repair_rounds: 0
+  phase_timeout_seconds: 600
+  allow_phase_fallback: true
+
+ui:
+  approval_mode: interactive
+  show_banner: true
+  show_raw_json: false
+  show_think_stream: false
+
+providers:
+  ark_primary:
+    base_url: https://api.deepseek.com
+    api_key: sk-c5a7489adee5470cbb9cebb2b46bef6d
+    model: deepseek-v4-pro
+    use_responses: false
+    timeout_seconds: 180
+    max_retries: 2
+  ark_secondary:
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    api_key: 52ee9976-477b-4239-acec-100353207151
+    model: doubao-seed-2-0-pro-260215
+    use_responses: false
+    timeout_seconds: 180
+    max_retries: 2
+  ark_glm:
+    base_url: https://open.bigmodel.cn/api/paas/v4/
+    api_key: 769003e302f94f2fbce5a7508885237e.a0IPFQpoxbKowyNi
+    model: glm-5.1
+    use_responses: false
+    timeout_seconds: 180
+    max_retries: 2
+    supports_json_schema: true
+
+node_bindings:
+  PLANNER_DRAFT:
+    provider: ark_glm
+    max_turns: 6
+  PLANNER_CRITIC:
+    provider: ark_glm
+    max_turns: 3
+  PLANNER_FINALIZER:
+    provider: ark_glm
+    max_turns: 3
+  PLANNER_REVISION:
+    provider: ark_glm
+    max_turns: 4
+  SETUP_PLAN_REFINER:
+    provider: ark_glm
+    max_turns: 6
+  DDL_PLAN_REFINER:
+    provider: ark_glm
+    max_turns: 6
+  CORE_PLAN_REFINER:
+    provider: ark_glm
+    max_turns: 6
+  SETUP:
+    provider: ark_glm
+    max_turns: 3
+  DDL:
+    provider: ark_glm
+    max_turns: 3
+  CORE:
+    provider: ark_glm
+    max_turns: 3
+  SQL_REPAIR:
+    provider: ark_glm
+    max_turns: 3

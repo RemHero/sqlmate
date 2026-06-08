@@ -1,0 +1,15 @@
+{
+  "task_goal": "为 StarRocks 的分区表创建和查询场景生成测试 SQL。",
+  "db_dialect": "starrocks",
+  "feature_under_test": "分区建表与基础查询",
+  "requirements": [
+    "覆盖分区表创建、插入、按分区过滤查询",
+    "必须包含 setup、ddl、core 三个阶段",
+    "要体现需要额外知识取证的点"
+  ],
+  "constraints": [
+    "用户稍后会补充更完整的 prompt",
+    "暂时只要求流程和样例产物跑通"
+  ]
+}
+

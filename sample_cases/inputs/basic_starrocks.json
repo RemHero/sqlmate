@@ -1,0 +1,16 @@
+{
+  "task_goal": "为 StarRocks 的基础建表、插入和查询功能生成一套可执行 SQL 用例。",
+  "db_dialect": "starrocks",
+  "feature_under_test": "基础 DDL 与 DML 功能回归",
+  "requirements": [
+    "需要覆盖正向路径和异常路径",
+    "必须拆分为 setup、ddl、core 三个阶段",
+    "SQL 必须可执行",
+    "必须包含 cleanup"
+  ],
+  "constraints": [
+    "优先使用最小可复现表结构",
+    "如果知识不足，要显式指出缺失知识"
+  ]
+}
+

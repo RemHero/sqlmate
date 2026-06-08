@@ -1,0 +1,5 @@
+{
+  "session setup": "Use deterministic setup order. Create isolated test objects with stable prefixes. Include cleanup for users, databases, and tables where applicable.",
+  "test data strategy": "Prefer a compact dataset that still covers positive, boundary, and negative cases. Keep inserted rows easy to assert."
+}
+

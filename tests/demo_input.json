@@ -1,0 +1,16 @@
+{
+  "task_goal": "为新开发的数据库特性生成一套可执行 SQL 用例，用于验证基本建表、插入、查询和异常路径是否符合预期。",
+  "db_dialect": "starrocks",
+  "feature_under_test": "基础 DDL 与 DML 功能回归",
+  "requirements": [
+    "需要覆盖正向路径和异常路径",
+    "必须包含 setup、ddl、core 三个阶段",
+    "SQL 必须可执行，不能出现伪 SQL",
+    "输出中应包含 cleanup"
+  ],
+  "constraints": [
+    "优先使用最小可复现表结构",
+    "如上下文知识不足，需要指出缺失知识"
+  ]
+}
+

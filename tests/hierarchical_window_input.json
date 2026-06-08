@@ -1,0 +1,27 @@
+{
+  "task_goal": "测试 START WITH/CONNECT BY 语法下使用层次查询系统函数 sys_connect_by_path/connect_by_root 和窗口函数混用时的语法正确性和结果正确性",
+  "db_dialect": "starrocks",
+  "feature_under_test": "START WITH/CONNECT BY 与 sys_connect_by_path/connect_by_root、窗口函数、GROUP BY、视图、多层子查询的组合回归",
+  "requirements": [
+    "请枚举至少 5 类不同的窗口函数，比如 row_number、lead、LPAD、last_value、rank 等",
+    "窗口函数必须和层次查询系统函数 sys_connect_by_path/connect_by_root 出现在同层",
+    "窗口函数使用列以及 OVER 子句中 PARTITION BY / ORDER BY 的列可以相同或者不同",
+    "窗口函数使用列以及 OVER 子句中 PARTITION BY / ORDER BY 的列和层次查询系统函数使用的列可以相同或者不同",
+    "需要和 GROUP BY 共同测试，GROUP BY 指定列可以和窗口函数列或 OVER 子句列相同或不同",
+    "可以有多个窗口函数和层次查询系统函数",
+    "可以有多层子查询使用窗口函数和层次查询系统函数",
+    "GROUP BY 可以修饰层次查询系统函数或者层次查询系统函数的别名",
+    "可以创建视图包含层次查询系统函数，并使用视图调用窗口函数",
+    "可以创建视图包含视图调用窗口函数，并使用视图调用层次查询系统函数",
+    "GROUP BY 或 PARTITION BY / ORDER BY 的键可以是主键",
+    "表类型不限",
+    "最终生成的 SQL 必须覆盖用户要求的全量场景，不要省略"
+  ],
+  "constraints": [
+    "输出必须包含 setup、ddl、core 三个阶段",
+    "最终 SQL 必须可执行，不能出现伪 SQL",
+    "最终 SQL 总行数至少 200 行",
+    "优先使用最小但足够表达需求的表结构",
+    "如果知识不足，需要在计划或结果里指出证据缺口"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "sample": "partition_focus",
+  "input_file": "sample_cases/inputs/partition_focus.json",
+  "output_file": "sample_cases/outputs/sample-partition_focus-c37b575e.json",
+  "execution_success": true
+}

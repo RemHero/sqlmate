@@ -1,0 +1,2 @@
+"""SqlMate application package."""
+

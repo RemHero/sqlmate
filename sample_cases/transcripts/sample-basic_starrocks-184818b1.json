@@ -1,0 +1,6 @@
+{
+  "sample": "basic_starrocks",
+  "input_file": "sample_cases/inputs/basic_starrocks.json",
+  "output_file": "sample_cases/outputs/sample-basic_starrocks-184818b1.json",
+  "execution_success": true
+}

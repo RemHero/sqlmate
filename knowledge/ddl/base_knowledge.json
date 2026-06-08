@@ -1,0 +1,5 @@
+{
+  "create table": "A DDL validation plan should define table names, columns, data types, nullability, keys, distribution or partitioning requirements when relevant.",
+  "alter table": "If ALTER is involved, validate both metadata change and post-change query behavior."
+}
+

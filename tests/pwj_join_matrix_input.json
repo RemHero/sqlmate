@@ -1,0 +1,27 @@
+{
+  "task_goal": "测试 pwj（partition wise join）在不同 join 算子下的表现，并覆盖 full pwj / partial pwj 与不同 join 语法、不同物理 join 实现的排列组合。",
+  "db_dialect": "unknown",
+  "feature_under_test": "partition wise join",
+  "raw_request": "<input>\n目的：\n我现在想测试请你测试pwj（partition wise join）在不同的join算子下的表现。\n\n测试要点说明：\n1、测试要覆盖全面不同的PWJ 表现，例如partial pwj，full pwj。\n2、测试要覆盖所有的join语法，例如left join,innner join\n3、测试要覆盖所有的join算子实现，例如merge join, hash join, NestLoop join.\n4、要将上述的所有情况进行组合排列。也就是pwj的2种形态 x 不同的Join语法 x 不同的join算子实现。对所有情况一一列举，进行排列组合测试\n5、建表语句用一级分区表即可，用hash分区即可。\n<\\input>\n\n<TP>\npartial pwj，full pwj， join, eft join,innner join,merge join, hash join, NestLoop join\n<\\TP>",
+  "requirements": [
+    "覆盖 partial pwj 和 full pwj",
+    "覆盖不同 join 语法",
+    "覆盖 merge join、hash join、NestLoop join",
+    "对上述维度做排列组合测试",
+    "建表使用一级 hash 分区表"
+  ],
+  "constraints": [
+    "SQL 应可执行",
+    "需要 setup / ddl / core 三阶段产物"
+  ],
+  "keywords": [
+    "partial pwj",
+    "full pwj",
+    "join",
+    "left join",
+    "inner join",
+    "merge join",
+    "hash join",
+    "NestLoop join"
+  ]
+}
