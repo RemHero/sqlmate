@@ -167,6 +167,17 @@ class AgentNode(BaseNode):
             ctx.ui.raise_if_interrupted()
 
         prompt = ctx.prompt_loader.load(self.node_name)
+
+        # ---- 注入工具调用轮次限制 ----
+        # 放在 OUTPUT FORMAT 之前，确保模型最后看到的是严格的 JSON 输出要求
+        if self.force_first_tool and self.tools and self.max_tool_rounds > 0:
+            tool_limit_msg = (
+                f"\n\n【工具调用限制】你最多只能进行 {self.max_tool_rounds} 轮知识检索"
+                f"（即最多调用 {self.max_tool_rounds} 次 retrieve_database_knowledge 工具）。"
+                f"请在调用工具前规划好检索策略，一次性检索所有必要主题，避免重复调用浪费轮次。"
+            )
+            prompt = prompt + tool_limit_msg
+
         if self.output_type is not None and self.output_type is not str:
             schema_desc = json.dumps(self.output_type.model_json_schema(), ensure_ascii=False, indent=2)
             prompt = (
@@ -185,15 +196,6 @@ class AgentNode(BaseNode):
                     + "\nAfter the thinking phase ends, your final content must be ONLY the JSON object matching the schema above."
                     + "\nDo NOT output analysis, summaries, or any other text as the final content."
                 )
-
-        # ---- 注入工具调用轮次限制 ----
-        if self.force_first_tool and self.tools and self.max_tool_rounds > 0:
-            tool_limit_msg = (
-                f"\n\n【工具调用限制】你最多只能进行 {self.max_tool_rounds} 轮知识检索"
-                f"（即最多调用 {self.max_tool_rounds} 次 retrieve_database_knowledge 工具）。"
-                f"请在调用工具前规划好检索策略，一次性检索所有必要主题，避免重复调用浪费轮次。"
-            )
-            prompt = prompt + tool_limit_msg
 
         # ---- 根据模型名构建 extra_body ----
         model_name = self._model_name()
@@ -243,18 +245,17 @@ class AgentNode(BaseNode):
                 )
                 break  # 成功
             except ModelBehaviorError as exc:
-                error_text = str(exc)[:500]
                 if attempt < MAX_JSON_RETRIES:
                     ctx.run_logger.log("json_parse_retry", {
                         "node": self.node_name,
                         "attempt": attempt + 1,
                         "retries_allowed": MAX_JSON_RETRIES,
-                        "error": error_text,
+                        "error": str(exc),
                     })
                     if ctx.ui:
                         ctx.ui.warning(
                             f"[{self.node_name}] JSON 解析失败（attempt {attempt + 1}/{MAX_JSON_RETRIES + 1}），"
-                            f"正在重试模型调用...\n  {error_text}"
+                            f"正在重试模型调用..."
                         )
                 else:
                     return await self._fallback_two_phase(
@@ -287,18 +288,17 @@ class AgentNode(BaseNode):
                     )
                     break  # 成功
                 except ModelBehaviorError as exc:
-                    error_text = str(exc)[:500]
                     if attempt < MAX_JSON_RETRIES:
                         ctx.run_logger.log("json_parse_retry", {
                             "node": self.node_name,
                             "attempt": attempt + 1,
                             "retries_allowed": MAX_JSON_RETRIES,
-                            "error": error_text,
+                            "error": str(exc),
                         })
                         if ctx.ui:
                             ctx.ui.warning(
                                 f"[{self.node_name}] JSON 解析失败（attempt {attempt + 1}/{MAX_JSON_RETRIES + 1}），"
-                                f"正在重试模型调用...\n  {error_text}"
+                                f"正在重试模型调用..."
                             )
                     else:
                         return await self._fallback_two_phase(
@@ -373,38 +373,60 @@ class AgentNode(BaseNode):
         if ctx.ui:
             ctx.ui.stream_begin(self.node_name)
         try:
-            # B（SDK 内置 JSON 校验）在 stream_events 或 final_output 阶段可能抛出
-            # ModelBehaviorError。不在此处内部恢复——让异常向上传播到 run()，
-            # 由 run() 的重试逻辑决定重试 A（_single_agent_run）或走 _fallback_two_phase。
-            async for event in result.stream_events():
-                if isinstance(event, RawResponsesStreamEvent):
-                    data = event.data
-                    if isinstance(data, (ResponseReasoningSummaryTextDeltaEvent, ResponseReasoningTextDeltaEvent)):
-                        reasoning_chunks.append(data.delta)
-                        if ctx.ui:
-                            ctx.ui.stream_reasoning_delta(data.delta)
-                    elif isinstance(data, ResponseTextDeltaEvent):
-                        text_chunks.append(data.delta)
-                        if ctx.ui:
-                            ctx.ui.stream_text_delta(data.delta)
-                elif isinstance(event, RunItemStreamEvent):
-                    if event.item.type == "tool_call_item":
-                        tool_called = True
-                    if ctx.ui:
+            # ---- 第一阶段：流式收集模型输出 ----
+            # SDK 内置 JSON 校验可能在 stream_events 迭代结束时抛出
+            # ModelBehaviorError（不只是 final_output）。这里静默捕获，
+            # 不中断流式 UI，交给下方统一的 _try_heal 恢复逻辑处理。
+            try:
+                async for event in result.stream_events():
+                    if isinstance(event, RawResponsesStreamEvent):
+                        data = event.data
+                        if isinstance(data, (ResponseReasoningSummaryTextDeltaEvent, ResponseReasoningTextDeltaEvent)):
+                            reasoning_chunks.append(data.delta)
+                            if ctx.ui:
+                                ctx.ui.stream_reasoning_delta(data.delta)
+                        elif isinstance(data, ResponseTextDeltaEvent):
+                            text_chunks.append(data.delta)
+                            if ctx.ui:
+                                ctx.ui.stream_text_delta(data.delta)
+                    elif isinstance(event, RunItemStreamEvent):
                         if event.item.type == "tool_call_item":
-                            ctx.ui.stream_tool_event("[tool called]")
-                        elif event.item.type == "tool_call_output_item":
-                            ctx.ui.stream_tool_output(str(event.item.output))
-                elif isinstance(event, AgentUpdatedStreamEvent):
-                    if ctx.ui:
-                        ctx.ui.stream_tool_event(f"[agent updated] {event.new_agent.name}")
+                            tool_called = True
+                        if ctx.ui:
+                            if event.item.type == "tool_call_item":
+                                ctx.ui.stream_tool_event("[tool called]")
+                            elif event.item.type == "tool_call_output_item":
+                                ctx.ui.stream_tool_output(str(event.item.output))
+                    elif isinstance(event, AgentUpdatedStreamEvent):
+                        if ctx.ui:
+                            ctx.ui.stream_tool_event(f"[agent updated] {event.new_agent.name}")
+            except ModelBehaviorError:
+                pass  # streaming 阶段校验失败，由下方 _try_heal 统一处理
+
             raw_text = "".join(text_chunks)
+
+            # ---- 第二阶段：解析输出（SDK → _try_heal） ----
+            output = None
             try:
                 output = result.final_output
             except ModelBehaviorError:
+                pass  # SDK 解析失败，交给 _try_heal
+
+            if output is None:
                 output = self._try_heal(ctx, raw_text)
                 if output is None:
-                    raise
+                    # 记录完整原始输出，不再截断，便于判断真截断 vs 格式包裹
+                    ctx.run_logger.log("json_parse_failed", {
+                        "node": self.node_name,
+                        "raw_text": raw_text,
+                        "raw_text_length": len(raw_text),
+                    })
+                    raise ModelBehaviorError(
+                        f"[{self.node_name}] Cannot parse model output as "
+                        f"{self.output_type.__name__}. "
+                        f"raw_text length={len(raw_text)}, "
+                        f"preview={raw_text[:200]}"
+                    )
 
             if ctx.ui:
                 rendered_output = (
@@ -446,9 +468,30 @@ class AgentNode(BaseNode):
     def _try_heal(self, ctx: SqlMateContext, raw_text: str) -> Any:
         """用原始文本尝试恢复结构化输出，成功返回对象，失败返回 None。
 
+        策略 0: 从混合文本中定位第一个 '{'，用 raw_decode 提取完整 JSON → model_validate
         策略 1: 去掉 markdown 代码块包裹后 model_validate_json
         策略 2: json.loads + model_validate
         """
+        # 策略 0: 从混合文本中提取 JSON 块（处理模型在 JSON 前输出分析文字的情况）
+        try:
+            start = raw_text.find("{")
+            if start != -1:
+                decoder = json.JSONDecoder()
+                obj, _ = decoder.raw_decode(raw_text, start)
+                result = self.output_type.model_validate(obj)
+                ctx.run_logger.log("try_heal_s0_extract_ok", {
+                    "node": self.node_name,
+                    "json_start_offset": start,
+                })
+                if ctx.ui:
+                    ctx.ui.warning(
+                        f"[{self.node_name}] JSON 格式自动修复成功"
+                        f"（策略0: 从文本 offset={start} 处提取 JSON）"
+                    )
+                return result
+        except Exception:
+            pass
+
         cleaned = _strip_markdown_fences(raw_text)
         if cleaned != raw_text:
             ctx.run_logger.log("try_heal_s1_markdown_strip", {"node": self.node_name})
