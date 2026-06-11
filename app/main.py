@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from app.config import load_settings
 from app.logging_setup import JsonlRunLogger, configure_logging
+from app.services.checkpoint import CheckpointManager
 from app.nodes.agent import AgentNode
 from app.nodes.llm import LLMNode
 from app.schemas import GlobalPlan, KnowledgeBundle, PhaseOutline, PhasePlan, PhaseResult, PlannerDraft, PlannerOutput, PlannerReview
@@ -58,6 +59,17 @@ def parse_args() -> argparse.Namespace:
         "--show-think",
         action="store_true",
         help="Print intermediate reasoning to the terminal. By default it is only written to logs.",
+    )
+    parser.add_argument(
+        "--resume",
+        metavar="RUN_ID",
+        default=None,
+        help="Resume from the most advanced checkpoint of a previous run.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force delete existing checkpoints and restart the run from scratch.",
     )
     return parser.parse_args()
 
@@ -377,9 +389,18 @@ async def async_main() -> int:
                 else:
                     user_input = preset_user_input
 
-                run_id = _timestamp_run_id()
-                configure_logging(log_dir, run_id, enable_console=False)
-                run_logger = JsonlRunLogger(log_dir / f"{run_id}.jsonl")
+                # 如果 --resume 指定了 run_id 则复用，否则生成新的时间戳 ID。
+                # 若同时使用 --resume 和 --force，先清除已有 checkpoint 再从头开始。
+                if args.resume:
+                    run_id = args.resume
+                else:
+                    run_id = _timestamp_run_id()
+
+                # 新日志目录结构：logs/{run_id}/ 而非日志平铺在 logs/ 下
+                run_log_dir = log_dir / run_id
+                run_log_dir.mkdir(parents=True, exist_ok=True)
+                configure_logging(run_log_dir, "run", enable_console=False)
+                run_logger = JsonlRunLogger(run_log_dir / "run.jsonl")
                 logging.info("Starting SqlMate run_id=%s", run_id)
                 ui.reset_for_new_run(user_input["task_goal"])
 
@@ -393,6 +414,32 @@ async def async_main() -> int:
                         return 0
                     continue
 
+                # ---- Checkpoint / Resume ----
+                checkpoint_manager = CheckpointManager(run_log_dir)
+                if args.force:
+                    checkpoint_manager.delete_checkpoints()
+                    if args.resume:
+                        ui.warning(f"Cleared existing checkpoints for run_id={run_id}. Starting fresh.")
+
+                resume_data = None
+                if args.resume:
+                    completed_stages, restored_planner_output, restored_user_input = (
+                        checkpoint_manager.load_checkpoint()
+                    )
+                    if completed_stages:
+                        resume_data = (completed_stages, restored_planner_output)
+                        if restored_user_input:
+                            user_input = restored_user_input
+                        ui.note_output(
+                            f"Resuming run_id={run_id} from: {', '.join(sorted(completed_stages))}"
+                        )
+                    else:
+                        ui.warning(f"No checkpoint found for run_id={run_id}. Starting from scratch.")
+
+                # 持久化用户输入，供恢复时复用
+                checkpoint_manager.save_user_input(user_input)
+                # -----------------------------------
+
                 ctx = SqlMateContext(
                     run_id=run_id,
                     run_logger=run_logger,
@@ -400,6 +447,7 @@ async def async_main() -> int:
                     knowledge_service=knowledge_service,
                     output_dir=output_dir,
                     ui=ui,
+                    checkpoint_dir=run_log_dir,
                 )
                 run_config = build_run_config(settings, run_id)
                 planner = PlannerPipeline(
@@ -457,8 +505,9 @@ async def async_main() -> int:
                     core_node=_build_node("CORE", settings, registry, run_config, PhaseResult, "agent"),
                     output_dir=output_dir,
                     settings=settings,
+                    checkpoint_manager=checkpoint_manager,
                 )
-                result = await orchestrator.run(ctx, user_input)
+                result = await orchestrator.run(ctx, user_input, resume_data=resume_data)
                 output_path = output_dir / f"{run_id}.json"
                 ui.note_output(f"结果已输出到: {output_path}")
                 ui.note_output(f"执行结果: {result.execution.message}")

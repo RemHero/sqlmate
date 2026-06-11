@@ -30,3 +30,4 @@ class SqlMateContext:
     output_dir: Path
     shared_state: dict[str, Any] = field(default_factory=dict)
     ui: Any | None = None
+    checkpoint_dir: Path | None = None

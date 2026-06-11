@@ -10,6 +10,7 @@ from app.config import Settings
 from app.executors.mock_sql_executor import MockSqlExecutor
 from app.nodes.agent import AgentNode
 from app.schemas import FinalWorkflowOutput, PhasePlan, PhaseResult, PlannerOutput
+from app.services.checkpoint import CheckpointManager
 from app.services.sql_fallback import build_fallback_phase_result
 from app.services.run_context import SqlMateContext
 from app.workflow.planner import PlannerPipeline
@@ -104,6 +105,7 @@ class WorkflowOrchestrator:
         core_node: AgentNode,
         output_dir: Path,
         settings: Settings,
+        checkpoint_manager: CheckpointManager | None = None,
     ) -> None:
         self.planner = planner
         self.setup_node = setup_node
@@ -111,25 +113,82 @@ class WorkflowOrchestrator:
         self.core_node = core_node
         self.output_dir = output_dir
         self.settings = settings
+        self.checkpoint_manager = checkpoint_manager
 
-    async def run(self, ctx: SqlMateContext, user_input: dict) -> FinalWorkflowOutput:
-        """执行完整业务流程并返回最终产物。"""
-        planner_output, _planner_response_id = await self.planner.run(ctx, user_input)
-        planner_output = await self._review_planner_output(ctx, user_input, planner_output)
+    async def run(
+        self,
+        ctx: SqlMateContext,
+        user_input: dict,
+        resume_data: tuple[set[str], PlannerOutput | None] | None = None,
+    ) -> FinalWorkflowOutput:
+        """执行完整业务流程并返回最终产物。
 
-        setup_plan = await self.planner.build_phase_plan(ctx, "SETUP", user_input, planner_output)
-        planner_output.setup_plan = setup_plan
-        ddl_plan = await self.planner.build_phase_plan(ctx, "DDL", user_input, planner_output)
-        planner_output.ddl_plan = ddl_plan
-        core_plan = await self.planner.build_phase_plan(ctx, "CORE", user_input, planner_output)
-        planner_output.core_plan = core_plan
+        resume_data 由 CheckpointManager.load_checkpoint() 产生，
+        包含已完成的阶段集合和最近一次保存的 PlannerOutput。
+        """
+        completed_stages: set[str] = set()
+        planner_output: PlannerOutput | None = None
 
-        setup_plan = await self._review_phase_plan(ctx, user_input, planner_output, "SETUP", setup_plan)
-        planner_output.setup_plan = setup_plan
-        ddl_plan = await self._review_phase_plan(ctx, user_input, planner_output, "DDL", ddl_plan)
-        planner_output.ddl_plan = ddl_plan
-        core_plan = await self._review_phase_plan(ctx, user_input, planner_output, "CORE", core_plan)
-        planner_output.core_plan = core_plan
+        if resume_data:
+            completed_stages, planner_output = resume_data
+
+        # ================================================================
+        # Stage 1: Global Planner
+        # ================================================================
+        if "planner" not in completed_stages:
+            planner_output, _planner_response_id = await self.planner.run(ctx, user_input)
+            planner_output = await self._review_planner_output(ctx, user_input, planner_output)
+            if self.checkpoint_manager:
+                self.checkpoint_manager.save_planner_output("planner", planner_output)
+        else:
+            assert planner_output is not None, "planner_output must be loaded from checkpoint"
+
+        # ================================================================
+        # Stage 2: Build Phase Plans
+        # 仅在 phase plan 尚未生成时才调用 LLM（避免重复开销）。
+        # ================================================================
+        if planner_output.setup_plan is None:
+            setup_plan = await self.planner.build_phase_plan(ctx, "SETUP", user_input, planner_output)
+            planner_output.setup_plan = setup_plan
+        if planner_output.ddl_plan is None:
+            ddl_plan = await self.planner.build_phase_plan(ctx, "DDL", user_input, planner_output)
+            planner_output.ddl_plan = ddl_plan
+        if planner_output.core_plan is None:
+            core_plan = await self.planner.build_phase_plan(ctx, "CORE", user_input, planner_output)
+            planner_output.core_plan = core_plan
+
+        # ================================================================
+        # Stage 3: Review Phase Plans
+        # 逐一审批，每通过一个就保存 checkpoint。
+        # ================================================================
+        if "setup_plan" not in completed_stages:
+            setup_plan = await self._review_phase_plan(
+                ctx, user_input, planner_output, "SETUP", planner_output.setup_plan
+            )
+            planner_output.setup_plan = setup_plan
+            if self.checkpoint_manager:
+                self.checkpoint_manager.save_planner_output("setup_plan", planner_output)
+
+        if "ddl_plan" not in completed_stages:
+            ddl_plan = await self._review_phase_plan(
+                ctx, user_input, planner_output, "DDL", planner_output.ddl_plan
+            )
+            planner_output.ddl_plan = ddl_plan
+            if self.checkpoint_manager:
+                self.checkpoint_manager.save_planner_output("ddl_plan", planner_output)
+
+        if "core_plan" not in completed_stages:
+            core_plan = await self._review_phase_plan(
+                ctx, user_input, planner_output, "CORE", planner_output.core_plan
+            )
+            planner_output.core_plan = core_plan
+            if self.checkpoint_manager:
+                self.checkpoint_manager.save_planner_output("core_plan", planner_output)
+
+        # 以下阶段的变量名沿用原始代码风格，保持与 run_phase / merge 一致
+        setup_plan = planner_output.setup_plan
+        ddl_plan = planner_output.ddl_plan
+        core_plan = planner_output.core_plan
 
         async def run_phase(
             stage: str,
