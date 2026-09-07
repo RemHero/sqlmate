@@ -51,7 +51,7 @@ SqlMate/
   - 区分 `LLMNode` 和 `AgentNode`
 - `app/services/`
   - 公共服务层
-  - 包括知识检索、prompt 加载、provider 构建、运行时上下文
+  - 包括知识检索、prompt 加载、provider 构建、运行时上下文、checkpoint 持久化
 - `app/workflow/`
   - 编排层
   - 负责 planner 链路、人工审批、阶段执行、最终合并
@@ -135,11 +135,28 @@ SqlMate/
 
 ## 8. `logs/` 与 `output/`
 
-- `logs/`
-  - 保存 `.log` 和 `.jsonl`
-  - `.jsonl` 里是逐事件明细
-- `output/`
-  - 保存真实主流程的最终 JSON 输出
+### 8.1 `logs/`
+
+采用 **per-run** 目录结构，每次运行在 `logs/` 下创建以 `run_id` 命名的子目录：
+
+```
+logs/{run_id}/
+  run.log                    # 标准 Python 日志
+  run.jsonl                  # 结构化事件日志（JSONL，逐行追加）
+  user_input.json            # 用户原始输入（供 checkpoint 恢复）
+  checkpoint_manifest.json   # checkpoint 阶段清单
+  planner/                   # 阶段 1 checkpoint
+  setup_plan/                # 阶段 2 checkpoint
+  ddl_plan/                  # 阶段 3 checkpoint
+  core_plan/                 # 阶段 4 checkpoint
+```
+
+JSONL 日志记录逐事件明细，可用于回放分析和故障排查。
+
+### 8.2 `output/`
+
+- 保存真实主流程的最终 JSON 输出（`{run_id}.json`）
+- 合并后的 SQL 文件（`{run_id}.sql`）
 
 ## 9. 目录之间的依赖关系
 

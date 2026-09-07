@@ -380,7 +380,44 @@ async def async_main() -> int:
 
         while True:
             try:
-                if interactive_session:
+                # ---- 确定 run_id 并初始化日志目录 ----
+                if args.resume:
+                    run_id = args.resume
+                else:
+                    run_id = _timestamp_run_id()
+
+                run_log_dir = log_dir / run_id
+                run_log_dir.mkdir(parents=True, exist_ok=True)
+                configure_logging(run_log_dir, "run", enable_console=False)
+                run_logger = JsonlRunLogger(run_log_dir / "run.jsonl")
+                logging.info("Starting SqlMate run_id=%s", run_id)
+
+                # ---- Checkpoint / Resume（在用户输入提示之前加载）----
+                checkpoint_manager = CheckpointManager(run_log_dir)
+                if args.force:
+                    checkpoint_manager.delete_checkpoints()
+                    if args.resume:
+                        ui.warning(f"Cleared existing checkpoints for run_id={run_id}. Starting fresh.")
+
+                resume_data = None
+                restored_input_from_checkpoint: dict[str, Any] | None = None
+                if args.resume:
+                    completed_stages, restored_planner_output, restored_user_input = (
+                        checkpoint_manager.load_checkpoint()
+                    )
+                    if completed_stages:
+                        resume_data = (completed_stages, restored_planner_output)
+                        restored_input_from_checkpoint = restored_user_input
+                        ui.note_output(
+                            f"Resuming run_id={run_id} from: {', '.join(sorted(completed_stages))}"
+                        )
+                    else:
+                        ui.warning(f"No checkpoint found for run_id={run_id}. Starting from scratch.")
+
+                # ---- 获取用户输入（从 checkpoint 恢复 > 交互输入 > 文件）----
+                if restored_input_from_checkpoint:
+                    user_input = restored_input_from_checkpoint
+                elif interactive_session:
                     user_input = ui.prompt_user_request()
                     if user_input is None:
                         ui.stop()
@@ -389,19 +426,8 @@ async def async_main() -> int:
                 else:
                     user_input = preset_user_input
 
-                # 如果 --resume 指定了 run_id 则复用，否则生成新的时间戳 ID。
-                # 若同时使用 --resume 和 --force，先清除已有 checkpoint 再从头开始。
-                if args.resume:
-                    run_id = args.resume
-                else:
-                    run_id = _timestamp_run_id()
-
-                # 新日志目录结构：logs/{run_id}/ 而非日志平铺在 logs/ 下
-                run_log_dir = log_dir / run_id
-                run_log_dir.mkdir(parents=True, exist_ok=True)
-                configure_logging(run_log_dir, "run", enable_console=False)
-                run_logger = JsonlRunLogger(run_log_dir / "run.jsonl")
-                logging.info("Starting SqlMate run_id=%s", run_id)
+                # 持久化用户输入，供恢复时复用
+                checkpoint_manager.save_user_input(user_input)
                 ui.reset_for_new_run(user_input["task_goal"])
 
                 if args.ui_preview:
@@ -413,32 +439,6 @@ async def async_main() -> int:
                         print("SqlMate UI preview completed.")
                         return 0
                     continue
-
-                # ---- Checkpoint / Resume ----
-                checkpoint_manager = CheckpointManager(run_log_dir)
-                if args.force:
-                    checkpoint_manager.delete_checkpoints()
-                    if args.resume:
-                        ui.warning(f"Cleared existing checkpoints for run_id={run_id}. Starting fresh.")
-
-                resume_data = None
-                if args.resume:
-                    completed_stages, restored_planner_output, restored_user_input = (
-                        checkpoint_manager.load_checkpoint()
-                    )
-                    if completed_stages:
-                        resume_data = (completed_stages, restored_planner_output)
-                        if restored_user_input:
-                            user_input = restored_user_input
-                        ui.note_output(
-                            f"Resuming run_id={run_id} from: {', '.join(sorted(completed_stages))}"
-                        )
-                    else:
-                        ui.warning(f"No checkpoint found for run_id={run_id}. Starting from scratch.")
-
-                # 持久化用户输入，供恢复时复用
-                checkpoint_manager.save_user_input(user_input)
-                # -----------------------------------
 
                 ctx = SqlMateContext(
                     run_id=run_id,

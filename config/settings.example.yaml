@@ -72,35 +72,35 @@ providers:
 
 node_bindings:
   PLANNER_DRAFT:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 6
   PLANNER_CRITIC:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 3
   PLANNER_FINALIZER:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 3
   PLANNER_REVISION:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 4
   SETUP_PLAN_REFINER:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 6
   DDL_PLAN_REFINER:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 6
   CORE_PLAN_REFINER:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 6
   SETUP:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 3
   DDL:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 3
   CORE:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 3
   SQL_REPAIR:
-    provider: ark_glm
+    provider: ark_primary
     max_turns: 3
