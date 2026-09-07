@@ -12,17 +12,24 @@ from dotenv import load_dotenv
 
 
 def _patch_input_tokens_details() -> None:
-    """兼容 openai 与 openai-agents 对 cache_write_tokens 的版本差异。"""
+    """Patch openai InputTokensDetails to make cache_write_tokens optional.
+
+    openai>=2.46 added ``cache_write_tokens`` as a required field on
+    ``InputTokensDetails``, but openai-agents 0.13.x still creates instances
+    with only ``cached_tokens=0``. Until a compatible agents release lands,
+    make the new field default to 0.
+    """
     try:
         from openai.types.responses.response_usage import InputTokensDetails
 
         field = InputTokensDetails.model_fields.get("cache_write_tokens")
         if field is not None and field.is_required():
             field.default = 0
-            field.default_factory = None
+            field.default_factory = None  # type: ignore[assignment]
+            # Rebuild the model so Pydantic picks up the new default.
             InputTokensDetails.model_rebuild(force=True)
     except Exception:
-        # 旧版 openai 没有该字段时无需补丁；启动不应因此失败。
+        # Older OpenAI versions do not expose this field and need no patch.
         pass
 
 

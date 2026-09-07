@@ -59,6 +59,7 @@ class LLMNode(BaseNode):
         extra_body = dict(self.model_extra_body or {})
         model_name = getattr(self.model, "model", "").lower()
         if "glm" in model_name:
+            # 与 AgentNode 保持一致；调用方显式 extra_body 配置优先。
             extra_body.setdefault("chat_template_kwargs", {}).setdefault(
                 "enable_thinking", self.enable_thinking
             )

@@ -203,20 +203,22 @@ class AgentNode(BaseNode):
         model_name = self._model_name()
         is_deepseek = "deepseek" in model_name
         is_doubao = "doubao" in model_name or "glm" in model_name
+        is_glm = "glm" in model_name
 
         extra_body = dict(self.model_extra_body or {})
-        if "glm" in model_name:
-            # GLM-5.x 在 vLLM 网关上通过该参数控制推理。内网默认关闭可避免
-            # 长 reasoning 导致首 token/流式响应超时；显式 extra_body 优先。
-            extra_body.setdefault("chat_template_kwargs", {}).setdefault(
-                "enable_thinking", self.enable_thinking
-            )
         if is_deepseek:
             # DeepSeek 官方文档：thinking 通过 extra_body 开启
             extra_body.setdefault("thinking", {"type": "enabled"})
         # reasoning_effort 仅对支持该参数的非豆包模型设置
         if not is_doubao:
             extra_body.setdefault("reasoning_effort", "max")
+        # GLM-5.x 通过 chat_template_kwargs.enable_thinking 控制推理开关。
+        # 底层 vLLM 推理速度慢，长 reasoning 易触发网关流式超时 (502/incomplete read)。
+        # 默认关闭 thinking 以避免超时；显式 model_extra_body 配置优先。
+        if is_glm:
+            extra_body.setdefault("chat_template_kwargs", {}).setdefault(
+                "enable_thinking", self.enable_thinking
+            )
 
         enriched_payload = _enrich_payload_with_knowledge(
             ctx, self.node_name, payload,

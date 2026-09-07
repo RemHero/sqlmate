@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 import json
 import os
 import select
@@ -52,6 +53,7 @@ class WorkflowConsole:
         self._stream_mode: str | None = None
         self._stream_buffer = ""
         self._input_buffer = ""
+        self._input_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self._working_enabled = False
         self._working_visible = False
         self._working_label = "working"
@@ -347,62 +349,71 @@ class WorkflowConsole:
         return UserReviewDecision(approved=False, feedback="\n".join(lines).strip())
 
     def _gray_input(self, prompt: str) -> str:
-        """以 raw terminal 模式读取单行，避免 ANSI 与 input() 回显冲突。"""
-        prefix = "\x1b[48;2;58;58;62m\x1b[38;2;245;245;245m"
-        suffix = "\x1b[0m"
-        sys.stdout.write(prefix + prompt)
-        sys.stdout.flush()
+        """使用 raw terminal mode 读取单行，避免 ANSI 显示延迟和粘贴丢失。"""
+        bg = "\x1b[48;2;58;58;62m\x1b[38;2;245;245;245m"
+        reset = "\x1b[0m"
+
+        if self._should_animate_banner_input():
+            sys.stdout.write(bg + prompt)
+            sys.stdout.flush()
+            try:
+                return self._animated_banner_input()
+            finally:
+                sys.stdout.write(reset)
+                sys.stdout.flush()
+
         if not sys.stdin.isatty():
+            sys.stdout.write(bg + prompt)
+            sys.stdout.flush()
             try:
                 return input()
             except EOFError:
                 return "quit"
             finally:
-                sys.stdout.write(suffix)
+                sys.stdout.write(reset)
                 sys.stdout.flush()
 
+        fd = sys.stdin.fileno()
+        original = termios.tcgetattr(fd)
+        chars: list[str] = []
         try:
-            if self._should_animate_banner_input():
-                return self._animated_banner_input()
-
-            fd = sys.stdin.fileno()
-            original = termios.tcgetattr(fd)
-            chars: list[str] = []
-            try:
-                tty.setcbreak(fd)
-                while True:
-                    char = self._read_raw_char(fd)
-                    if not char:
-                        return "quit"
-                    if char in {"\n", "\r"}:
-                        sys.stdout.write("\n")
+            self._set_cbreak(fd)
+            sys.stdout.write(bg + prompt)
+            sys.stdout.flush()
+            while True:
+                char = self._read_raw_char(fd)
+                if not char:
+                    return "quit"
+                if char in {"\n", "\r"}:
+                    if char == "\r":
+                        self._discard_buffered_lf()
+                    sys.stdout.write(reset + "\n")
+                    sys.stdout.flush()
+                    return "".join(chars)
+                if char == "\x03":
+                    raise KeyboardInterrupt
+                if char == "\x04":
+                    if not chars:
+                        raise EOFError
+                    continue
+                if char in {"\x7f", "\b"}:
+                    if chars:
+                        chars.pop()
+                        sys.stdout.write("\b \b")
                         sys.stdout.flush()
-                        return "".join(chars)
-                    if char == "\x03":
-                        raise KeyboardInterrupt
-                    if char == "\x04":
-                        if not chars:
-                            raise EOFError
-                        continue
-                    if char in {"\x7f", "\b"}:
-                        if chars:
-                            chars.pop()
-                            sys.stdout.write("\b \b")
-                            sys.stdout.flush()
-                        continue
-                    if char == "\x1b":
-                        self._skip_escape_sequence(fd)
-                        continue
-                    if char.isprintable():
-                        chars.append(char)
-                        sys.stdout.write(char)
-                        sys.stdout.flush()
-            finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, original)
+                    continue
+                if char == "\x1b":
+                    self._skip_escape_sequence(fd)
+                    continue
+                if char.isprintable():
+                    chars.append(char)
+                    sys.stdout.write(char)
+                    sys.stdout.flush()
         except EOFError:
             return "quit"
         finally:
-            sys.stdout.write(suffix)
+            termios.tcsetattr(fd, termios.TCSADRAIN, original)
+            sys.stdout.write(reset)
             sys.stdout.flush()
 
     def _multiline_request_input(self) -> str:
@@ -415,26 +426,21 @@ class WorkflowConsole:
         4. 支持用户直接粘贴多行文本
         """
         self.console.print(Text("输入请求，空行提交。可直接粘贴多行内容。", style="dim"))
-        if sys.stdin.isatty():
-            if self._should_animate_banner_input():
-                first_line = self._gray_input("❯ ")
-                if first_line.strip().lower() in {"/exit", "/quit"}:
-                    return first_line.strip()
-                if first_line == "":
-                    return ""
-                return self._continue_multiline_raw([first_line])
-            return self._raw_multiline_session()
+        if self._should_animate_banner_input():
+            first_line = self._gray_input("❯ ")
+            if first_line.strip().lower() in {"/exit", "/quit"}:
+                return first_line.strip()
+            if not first_line:
+                return ""
+            return self._continue_multiline_raw([first_line])
 
-        lines: list[str] = []
-        while True:
-            prompt = "❯ " if not lines else "… "
-            line = self._gray_input(prompt)
-            if not lines and line.strip().lower() in {"/exit", "/quit"}:
-                return line.strip()
-            if line == "":
-                break
-            lines.append(line)
-        return "\n".join(lines)
+        if not sys.stdin.isatty():
+            try:
+                return sys.stdin.read().strip()
+            except EOFError:
+                return "quit"
+
+        return self._raw_multiline_session()
 
     def _raw_multiline_session(self) -> str:
         """在一次 raw-mode 会话中读取完整多行请求。"""
@@ -447,7 +453,6 @@ class WorkflowConsole:
         prefix = "\x1b[48;2;58;58;62m\x1b[38;2;245;245;245m"
         suffix = "\x1b[0m"
         current: list[str] = []
-        skip_lf = False
 
         def show_prompt() -> None:
             prompt = "❯ " if not lines else "… "
@@ -456,17 +461,14 @@ class WorkflowConsole:
 
         show_prompt()
         try:
-            tty.setcbreak(fd)
+            self._set_cbreak(fd)
             while True:
                 char = self._read_raw_char(fd)
                 if not char:
                     return "\n".join(lines)
-                if skip_lf and char == "\n":
-                    skip_lf = False
-                    continue
-                skip_lf = False
                 if char in {"\n", "\r"}:
-                    skip_lf = char == "\r"
+                    if char == "\r":
+                        self._discard_buffered_lf()
                     line = "".join(current)
                     current.clear()
                     sys.stdout.write(suffix + "\n")
@@ -510,19 +512,33 @@ class WorkflowConsole:
             char, self._input_buffer = self._input_buffer[0], self._input_buffer[1:]
             return char
 
-        data = bytearray(os.read(fd, 4096))
-        if not data:
-            return ""
-        while select.select([fd], [], [], 0.01)[0]:
-            chunk = os.read(fd, 4096)
-            if not chunk:
-                break
-            data.extend(chunk)
-        decoded = data.decode("utf-8", errors="replace")
-        if not decoded:
-            return ""
+        decoded = ""
+        while not decoded:
+            data = bytearray(os.read(fd, 4096))
+            if not data:
+                return ""
+            while select.select([fd], [], [], 0.01)[0]:
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    break
+                data.extend(chunk)
+            # 保留跨两次底层读取的 UTF-8 半字符，避免中文被替换字符破坏。
+            decoded = self._input_decoder.decode(bytes(data), final=False)
         self._input_buffer += decoded[1:]
         return decoded[0]
+
+    @staticmethod
+    def _set_cbreak(fd: int) -> None:
+        """进入 cbreak，并保留原始 CR/LF 以正确识别 Windows 风格粘贴。"""
+        tty.setcbreak(fd)
+        attributes = termios.tcgetattr(fd)
+        attributes[0] &= ~(termios.ICRNL | termios.INLCR | termios.IGNCR)
+        termios.tcsetattr(fd, termios.TCSANOW, attributes)
+
+    def _discard_buffered_lf(self) -> None:
+        """粘贴 CRLF 文本时避免把同一个换行处理两次。"""
+        if self._input_buffer.startswith("\n"):
+            self._input_buffer = self._input_buffer[1:]
 
     def _skip_escape_sequence(self, fd: int) -> None:
         """吞掉方向键和功能键等终端转义序列。"""
@@ -533,7 +549,7 @@ class WorkflowConsole:
             ready, _, _ = select.select([fd], [], [], 0.01)
             if not ready:
                 return ""
-            return os.read(fd, 1).decode("utf-8", errors="ignore")
+            return self._read_raw_char(fd)
 
         first = next_char()
         if first == "[":
@@ -558,14 +574,17 @@ class WorkflowConsole:
         step = 4
         max_shift = self._banner_max_shift()
         try:
-            tty.setcbreak(fd)
+            self._set_cbreak(fd)
             while True:
-                ready, _, _ = select.select([fd], [], [], 0.16)
+                has_buffered_input = bool(self._input_buffer)
+                ready = has_buffered_input or bool(select.select([fd], [], [], 0.16)[0])
                 if ready:
                     char = self._read_raw_char(fd)
                     if not char:
                         return "quit"
                     if char in {"\n", "\r"}:
+                        if char == "\r":
+                            self._discard_buffered_lf()
                         self._banner_animation_pending = False
                         sys.stdout.write("\n")
                         sys.stdout.flush()
