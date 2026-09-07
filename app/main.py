@@ -4,13 +4,29 @@ import argparse
 import asyncio
 import json
 import logging
-import os
-import signal
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+
+
+def _patch_input_tokens_details() -> None:
+    """兼容 openai 与 openai-agents 对 cache_write_tokens 的版本差异。"""
+    try:
+        from openai.types.responses.response_usage import InputTokensDetails
+
+        field = InputTokensDetails.model_fields.get("cache_write_tokens")
+        if field is not None and field.is_required():
+            field.default = 0
+            field.default_factory = None
+            InputTokensDetails.model_rebuild(force=True)
+    except Exception:
+        # 旧版 openai 没有该字段时无需补丁；启动不应因此失败。
+        pass
+
+
+_patch_input_tokens_details()
 
 from app.config import load_settings
 from app.logging_setup import JsonlRunLogger, configure_logging
@@ -270,6 +286,7 @@ def _build_node(
             run_config=run_config,
             max_turns=max_turns,
             model_extra_body=provider_cfg.model_extra_body,
+            enable_thinking=provider_cfg.enable_thinking,
         )
     return AgentNode(
         name,
@@ -283,6 +300,7 @@ def _build_node(
         max_output_tokens=settings.planner.max_output_tokens,
         max_tool_rounds=settings.planner.max_tool_rounds,
         supports_json_schema=provider_cfg.supports_json_schema,
+        enable_thinking=provider_cfg.enable_thinking,
     )
 
 
@@ -328,30 +346,6 @@ async def async_main() -> int:
         show_think_stream=args.show_think or settings.ui.show_think_stream,
     )
     ui.render_banner()
-
-    # ---- 安装自定义 SIGINT 处理器，替代 asyncio.run() 的内置处理器 ----
-    loop = asyncio.get_running_loop()
-    intr_count = 0
-
-    def _handle_sigint(signum, frame):
-        """自定义 SIGINT 处理器，实现双击 Ctrl-C 优雅退出逻辑。
-
-        第一次 Ctrl-C：取消所有正在运行的异步任务，中断当前操作。
-        第二次 Ctrl-C：立即退出程序（返回码 130）。
-        """
-        nonlocal intr_count
-        intr_count += 1
-        if intr_count >= 2:
-            # 双击 Ctrl-C：直接退出，恢复默认行为
-            os.write(2, b"\nSqlMate: Detected second Ctrl+C. Exiting.\n")
-            os._exit(130)
-        # 第一次 Ctrl-C：取消所有运行中的任务
-        for task in asyncio.all_tasks(loop):
-            if not task.done():
-                task.cancel()
-
-    _old_sigint = signal.signal(signal.SIGINT, _handle_sigint)
-    # --------------------------------------------------------------------
 
     prompt_loader = PromptLoader(prompts_dir)
     knowledge_service = KnowledgeService(
@@ -433,7 +427,6 @@ async def async_main() -> int:
                 if args.ui_preview:
                     _run_ui_preview(ui, user_input)
                     ui.reset_interrupt_state()
-                    intr_count = 0
                     if not interactive_session:
                         ui.stop()
                         print("SqlMate UI preview completed.")
@@ -512,7 +505,6 @@ async def async_main() -> int:
                 ui.note_output(f"结果已输出到: {output_path}")
                 ui.note_output(f"执行结果: {result.execution.message}")
                 ui.reset_interrupt_state()
-                intr_count = 0
 
                 if not interactive_session:
                     ui.stop()
@@ -524,26 +516,20 @@ async def async_main() -> int:
                     ui.stop()
                     print("SqlMate session closed.")
                     return 0
-            except (KeyboardInterrupt, WorkflowInterrupted) as exc:
-                ui.warning(ui.interrupt_hint(intr_count))
-                if intr_count >= 2 or not interactive_session:
-                    ui.stop()
-                    return 130
-                continue
+            except (KeyboardInterrupt, WorkflowInterrupted):
+                ui.warning("SqlMate: Interrupted.")
+                ui.stop()
+                return 130
             except asyncio.CancelledError:
-                ui.warning(ui.interrupt_hint(intr_count))
-                if intr_count >= 2 or not interactive_session:
-                    ui.stop()
-                    return 130
-                continue
+                ui.warning("SqlMate: Interrupted.")
+                ui.stop()
+                return 130
     except Exception:
         ui.stop()
         raise
     except asyncio.CancelledError:
         ui.stop()
         return 130
-    finally:
-        signal.signal(signal.SIGINT, _old_sigint)
 
 
 def main() -> int:

@@ -1,5 +1,5 @@
 openai-agents==0.13.6
-openai==2.24.0
+openai>=2.26.0,<3
 pydantic==2.12.5
 PyYAML==6.0.2
 python-dotenv==1.2.2

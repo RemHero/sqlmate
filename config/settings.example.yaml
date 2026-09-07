@@ -24,12 +24,11 @@ knowledge:
   claude_command: claude
   claude_permission_mode: bypassPermissions
   claude_use_add_dir: true
-  claude_timeout_seconds: 600
+  claude_timeout_seconds: 18000
   claude_max_output_chars: 40000
-  doc_knowledge_dir: /home/remhero/shared/ai/SqlMate/worflow/kfzn
+  doc_knowledge_dir: ${SQLMATE_DOC_KNOWLEDGE_DIR:-knowledge}
   doc_knowledge_dirs:
-    - /home/remhero/shared/ai/SqlMate/worflow/kfzn
-    - /home/remhero/shared/ai/SqlMate/worflow/kfzn
+    - ${SQLMATE_DOC_KNOWLEDGE_DIR:-knowledge}
   sql_examples_dir: knowledge/sql_examples_empty
   max_tool_found_items: 10
   max_tool_item_content_chars: 3000
@@ -37,7 +36,7 @@ knowledge:
 executor:
   type: mock
   max_repair_rounds: 0
-  phase_timeout_seconds: 600
+  phase_timeout_seconds: 1800
   allow_phase_fallback: true
 
 ui:
@@ -48,27 +47,33 @@ ui:
 
 providers:
   ark_primary:
-    base_url: https://api.deepseek.com
-    api_key: sk-c5a7489adee5470cbb9cebb2b46bef6d
-    model: deepseek-v4-pro
+    base_url: ${SQLMATE_PRIMARY_BASE_URL:-https://api.deepseek.com}
+    api_key: ${SQLMATE_PRIMARY_API_KEY:-}
+    model: ${SQLMATE_PRIMARY_MODEL:-deepseek-chat}
     use_responses: false
-    timeout_seconds: 180
+    timeout_seconds: ${SQLMATE_PRIMARY_TIMEOUT:-1800}
     max_retries: 2
+    enable_thinking: false
+    verify_ssl: ${SQLMATE_PRIMARY_VERIFY_SSL:-true}
   ark_secondary:
-    base_url: https://ark.cn-beijing.volces.com/api/v3
-    api_key: 52ee9976-477b-4239-acec-100353207151
-    model: doubao-seed-2-0-pro-260215
+    base_url: ${SQLMATE_SECONDARY_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+    api_key: ${SQLMATE_SECONDARY_API_KEY:-}
+    model: ${SQLMATE_SECONDARY_MODEL:-doubao-seed-2-0-pro-260215}
     use_responses: false
-    timeout_seconds: 180
+    timeout_seconds: ${SQLMATE_SECONDARY_TIMEOUT:-1800}
     max_retries: 2
+    enable_thinking: false
+    verify_ssl: ${SQLMATE_SECONDARY_VERIFY_SSL:-true}
   ark_glm:
-    base_url: https://open.bigmodel.cn/api/paas/v4/
-    api_key: 769003e302f94f2fbce5a7508885237e.a0IPFQpoxbKowyNi
-    model: glm-5.1
+    base_url: ${SQLMATE_GLM_BASE_URL:-https://open.bigmodel.cn/api/paas/v4/}
+    api_key: ${SQLMATE_GLM_API_KEY:-}
+    model: ${SQLMATE_GLM_MODEL:-glm-5.2}
     use_responses: false
-    timeout_seconds: 180
+    timeout_seconds: ${SQLMATE_GLM_TIMEOUT:-1800}
     max_retries: 2
     supports_json_schema: true
+    enable_thinking: true
+    verify_ssl: ${SQLMATE_GLM_VERIFY_SSL:-true}
 
 node_bindings:
   PLANNER_DRAFT:

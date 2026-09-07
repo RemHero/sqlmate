@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextvars
 
+import httpx
 from openai import AsyncOpenAI
 from agents.models.openai_responses import OpenAIResponsesModel
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
@@ -49,6 +50,17 @@ class ProviderRegistry:
 
     def __init__(self, providers: dict[str, ProviderConfig]) -> None:
         self.providers = providers
+        self._http_clients: dict[bool, httpx.AsyncClient] = {}
+
+    def _get_http_client(self, verify_ssl: bool) -> httpx.AsyncClient:
+        """按证书校验策略复用 HTTP client。
+
+        公网 provider 默认校验证书；只有明确配置 ``verify_ssl: false`` 的
+        内网自签名网关才关闭校验。
+        """
+        if verify_ssl not in self._http_clients:
+            self._http_clients[verify_ssl] = httpx.AsyncClient(verify=verify_ssl)
+        return self._http_clients[verify_ssl]
 
     def get_model(self, provider_name: str):
         """为指定 provider 构建可供 Agents SDK 使用的模型实例。"""
@@ -60,6 +72,7 @@ class ProviderRegistry:
             max_retries=cfg.max_retries,
             organization=cfg.organization,
             project=cfg.project,
+            http_client=self._get_http_client(cfg.verify_ssl),
         )
         if cfg.use_responses:
             return OpenAIResponsesModel(model=cfg.model, openai_client=client)

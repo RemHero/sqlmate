@@ -2,8 +2,11 @@ __pycache__/
 *.pyc
 .env
 .pytest_cache/
-logs/*.jsonl
-logs/*.log
+logs/
 output/
 .claude/
-
+.python310/
+.venv/
+venv/
+vendor/openssl/
+*.patch

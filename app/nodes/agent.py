@@ -132,6 +132,7 @@ class AgentNode(BaseNode):
         max_output_tokens: int = 16384,
         max_tool_rounds: int = 1,
         supports_json_schema: bool = False,
+        enable_thinking: bool = False,
     ) -> None:
         super().__init__(node_name)
         self.model = model
@@ -144,6 +145,7 @@ class AgentNode(BaseNode):
         self.max_output_tokens = max_output_tokens
         self.max_tool_rounds = max_tool_rounds
         self.supports_json_schema = supports_json_schema
+        self.enable_thinking = enable_thinking
 
         model_name = self._model_name()
         self._is_thinking_model = "deepseek" in model_name or "glm" in model_name
@@ -203,6 +205,12 @@ class AgentNode(BaseNode):
         is_doubao = "doubao" in model_name or "glm" in model_name
 
         extra_body = dict(self.model_extra_body or {})
+        if "glm" in model_name:
+            # GLM-5.x 在 vLLM 网关上通过该参数控制推理。内网默认关闭可避免
+            # 长 reasoning 导致首 token/流式响应超时；显式 extra_body 优先。
+            extra_body.setdefault("chat_template_kwargs", {}).setdefault(
+                "enable_thinking", self.enable_thinking
+            )
         if is_deepseek:
             # DeepSeek 官方文档：thinking 通过 extra_body 开启
             extra_body.setdefault("thinking", {"type": "enabled"})

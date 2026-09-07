@@ -118,8 +118,10 @@ class ProviderConfig(BaseModel):
     max_retries: int = 2
     organization: str | None = None
     project: str | None = None
-    model_extra_body: dict = {}
+    model_extra_body: dict = Field(default_factory=dict)
     supports_json_schema: bool = False
+    enable_thinking: bool = False
+    verify_ssl: bool = True
 
 
 class NodeBinding(BaseModel):

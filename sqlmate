@@ -4,5 +4,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PYTHON_BIN="/home/remhero/bin/.venv/bin/python"
+if [[ -n "${SQLMATE_OPENSSL_LIB_DIR:-}" ]]; then
+  export LD_LIBRARY_PATH="${SQLMATE_OPENSSL_LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+
+if [[ -n "${SQLMATE_PYTHON:-}" ]]; then
+  PYTHON_BIN="$SQLMATE_PYTHON"
+elif [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
+  PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
+elif [[ -x "/home/remhero/bin/.venv/bin/python" ]]; then
+  # 兼容当前开发机已有的共享依赖环境。
+  PYTHON_BIN="/home/remhero/bin/.venv/bin/python"
+else
+  PYTHON_BIN="$(command -v python3 || true)"
+fi
+
+if [[ -z "$PYTHON_BIN" ]] || ! "$PYTHON_BIN" -c 'import agents, openai, pydantic, yaml, httpx, rich' 2>/dev/null; then
+  echo "SqlMate dependency environment not found. Run ./install.sh first or set SQLMATE_PYTHON." >&2
+  exit 1
+fi
+
 exec "$PYTHON_BIN" -m app.main "$@"

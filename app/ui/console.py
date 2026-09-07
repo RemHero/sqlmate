@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import select
 import sys
 import termios
@@ -50,7 +51,7 @@ class WorkflowConsole:
         self._interrupted = False
         self._stream_mode: str | None = None
         self._stream_buffer = ""
-        self._consecutive_interrupts = 0
+        self._input_buffer = ""
         self._working_enabled = False
         self._working_visible = False
         self._working_label = "working"
@@ -304,22 +305,10 @@ class WorkflowConsole:
         if self._interrupted:
             raise WorkflowInterrupted("Workflow interrupted by user.")
 
-    def record_interrupt(self) -> int:
-        """记录一次 Ctrl-C，并返回当前连续中断次数。"""
-        self._consecutive_interrupts += 1
-        return self._consecutive_interrupts
-
     def reset_interrupt_state(self) -> None:
-        """在一次成功交互后清空连续中断计数。"""
-        self._consecutive_interrupts = 0
+        """在一次成功交互后清空中断标记。"""
         self._interrupted = False
         self._close_stream_mode()
-
-    def interrupt_hint(self, count: int) -> str:
-        """根据连续中断次数返回对用户可见的提示。"""
-        if count <= 1:
-            return "当前处理已中断。再次按 Ctrl-C 将直接退出工具。"
-        return "检测到连续两次 Ctrl-C，正在退出工具。"
 
     def refresh(self) -> None:
         """兼容旧接口，转录模式无需刷新。"""
@@ -358,26 +347,63 @@ class WorkflowConsole:
         return UserReviewDecision(approved=False, feedback="\n".join(lines).strip())
 
     def _gray_input(self, prompt: str) -> str:
-        """打印灰底输入提示，并让用户直接在该行输入。
-
-        这里用 ANSI 背景色包裹整条输入线，尽量让体验更接近带背景的 CLI 输入框。
-        """
+        """以 raw terminal 模式读取单行，避免 ANSI 与 input() 回显冲突。"""
         prefix = "\x1b[48;2;58;58;62m\x1b[38;2;245;245;245m"
         suffix = "\x1b[0m"
         sys.stdout.write(prefix + prompt)
         sys.stdout.flush()
+        if not sys.stdin.isatty():
+            try:
+                return input()
+            except EOFError:
+                return "quit"
+            finally:
+                sys.stdout.write(suffix)
+                sys.stdout.flush()
+
         try:
             if self._should_animate_banner_input():
-                value = self._animated_banner_input()
-            else:
-                try:
-                    value = input()
-                except EOFError:
-                    value = "quit"
+                return self._animated_banner_input()
+
+            fd = sys.stdin.fileno()
+            original = termios.tcgetattr(fd)
+            chars: list[str] = []
+            try:
+                tty.setcbreak(fd)
+                while True:
+                    char = self._read_raw_char(fd)
+                    if not char:
+                        return "quit"
+                    if char in {"\n", "\r"}:
+                        sys.stdout.write("\n")
+                        sys.stdout.flush()
+                        return "".join(chars)
+                    if char == "\x03":
+                        raise KeyboardInterrupt
+                    if char == "\x04":
+                        if not chars:
+                            raise EOFError
+                        continue
+                    if char in {"\x7f", "\b"}:
+                        if chars:
+                            chars.pop()
+                            sys.stdout.write("\b \b")
+                            sys.stdout.flush()
+                        continue
+                    if char == "\x1b":
+                        self._skip_escape_sequence(fd)
+                        continue
+                    if char.isprintable():
+                        chars.append(char)
+                        sys.stdout.write(char)
+                        sys.stdout.flush()
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, original)
+        except EOFError:
+            return "quit"
         finally:
             sys.stdout.write(suffix)
             sys.stdout.flush()
-        return value
 
     def _multiline_request_input(self) -> str:
         """读取多行请求。
@@ -389,6 +415,16 @@ class WorkflowConsole:
         4. 支持用户直接粘贴多行文本
         """
         self.console.print(Text("输入请求，空行提交。可直接粘贴多行内容。", style="dim"))
+        if sys.stdin.isatty():
+            if self._should_animate_banner_input():
+                first_line = self._gray_input("❯ ")
+                if first_line.strip().lower() in {"/exit", "/quit"}:
+                    return first_line.strip()
+                if first_line == "":
+                    return ""
+                return self._continue_multiline_raw([first_line])
+            return self._raw_multiline_session()
+
         lines: list[str] = []
         while True:
             prompt = "❯ " if not lines else "… "
@@ -399,6 +435,114 @@ class WorkflowConsole:
                 break
             lines.append(line)
         return "\n".join(lines)
+
+    def _raw_multiline_session(self) -> str:
+        """在一次 raw-mode 会话中读取完整多行请求。"""
+        return self._continue_multiline_raw([])
+
+    def _continue_multiline_raw(self, lines: list[str]) -> str:
+        """从已有行继续读取，空行提交；整个会话只切换一次终端模式。"""
+        fd = sys.stdin.fileno()
+        original = termios.tcgetattr(fd)
+        prefix = "\x1b[48;2;58;58;62m\x1b[38;2;245;245;245m"
+        suffix = "\x1b[0m"
+        current: list[str] = []
+        skip_lf = False
+
+        def show_prompt() -> None:
+            prompt = "❯ " if not lines else "… "
+            sys.stdout.write(prefix + prompt)
+            sys.stdout.flush()
+
+        show_prompt()
+        try:
+            tty.setcbreak(fd)
+            while True:
+                char = self._read_raw_char(fd)
+                if not char:
+                    return "\n".join(lines)
+                if skip_lf and char == "\n":
+                    skip_lf = False
+                    continue
+                skip_lf = False
+                if char in {"\n", "\r"}:
+                    skip_lf = char == "\r"
+                    line = "".join(current)
+                    current.clear()
+                    sys.stdout.write(suffix + "\n")
+                    sys.stdout.flush()
+                    if not lines and line.strip().lower() in {"/exit", "/quit"}:
+                        return line.strip()
+                    if line == "":
+                        return "\n".join(lines)
+                    lines.append(line)
+                    show_prompt()
+                    continue
+                if char == "\x03":
+                    raise KeyboardInterrupt
+                if char == "\x04":
+                    if not current and not lines:
+                        raise EOFError
+                    continue
+                if char in {"\x7f", "\b"}:
+                    if current:
+                        current.pop()
+                        sys.stdout.write("\b \b")
+                        sys.stdout.flush()
+                    continue
+                if char == "\x1b":
+                    self._skip_escape_sequence(fd)
+                    continue
+                if char.isprintable():
+                    current.append(char)
+                    sys.stdout.write(char)
+                    sys.stdout.flush()
+        except EOFError:
+            return "/quit" if not lines else "\n".join(lines)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, original)
+            sys.stdout.write(suffix)
+            sys.stdout.flush()
+
+    def _read_raw_char(self, fd: int) -> str:
+        """绕过 Python stdin 缓冲读取字符，并保留快速粘贴的剩余内容。"""
+        if self._input_buffer:
+            char, self._input_buffer = self._input_buffer[0], self._input_buffer[1:]
+            return char
+
+        data = bytearray(os.read(fd, 4096))
+        if not data:
+            return ""
+        while select.select([fd], [], [], 0.01)[0]:
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                break
+            data.extend(chunk)
+        decoded = data.decode("utf-8", errors="replace")
+        if not decoded:
+            return ""
+        self._input_buffer += decoded[1:]
+        return decoded[0]
+
+    def _skip_escape_sequence(self, fd: int) -> None:
+        """吞掉方向键和功能键等终端转义序列。"""
+        def next_char() -> str:
+            if self._input_buffer:
+                char, self._input_buffer = self._input_buffer[0], self._input_buffer[1:]
+                return char
+            ready, _, _ = select.select([fd], [], [], 0.01)
+            if not ready:
+                return ""
+            return os.read(fd, 1).decode("utf-8", errors="ignore")
+
+        first = next_char()
+        if first == "[":
+            for _ in range(32):
+                char = next_char()
+                if not char or "@" <= char <= "~":
+                    break
+        elif first == "O":
+            next_char()
 
     def _should_animate_banner_input(self) -> bool:
         """只在首个用户输入前启用猫猫动画。"""
@@ -416,9 +560,9 @@ class WorkflowConsole:
         try:
             tty.setcbreak(fd)
             while True:
-                ready, _, _ = select.select([sys.stdin], [], [], 0.16)
+                ready, _, _ = select.select([fd], [], [], 0.16)
                 if ready:
-                    char = sys.stdin.read(1)
+                    char = self._read_raw_char(fd)
                     if not char:
                         return "quit"
                     if char in {"\n", "\r"}:
@@ -433,6 +577,9 @@ class WorkflowConsole:
                             buffer.pop()
                             sys.stdout.write("\b \b")
                             sys.stdout.flush()
+                        continue
+                    if char == "\x1b":
+                        self._skip_escape_sequence(fd)
                         continue
                     if char.isprintable():
                         if not move_started:

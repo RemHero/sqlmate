@@ -22,13 +22,23 @@ class LLMNode(BaseNode):
     例如 planner draft、critic 这类偏纯生成节点。
     """
 
-    def __init__(self, node_name: str, model, output_type, run_config, max_turns: int = 8, model_extra_body: dict | None = None) -> None:
+    def __init__(
+        self,
+        node_name: str,
+        model,
+        output_type,
+        run_config,
+        max_turns: int = 8,
+        model_extra_body: dict | None = None,
+        enable_thinking: bool = False,
+    ) -> None:
         super().__init__(node_name)
         self.model = model
         self.output_type = output_type
         self.run_config = run_config
         self.max_turns = max_turns
         self.model_extra_body = model_extra_body
+        self.enable_thinking = enable_thinking
 
     async def run(self, ctx: SqlMateContext, payload: dict[str, Any]) -> Any:
         """执行一次基础 LLM 节点调用并返回结构化结果。"""
@@ -46,11 +56,18 @@ class LLMNode(BaseNode):
                 + "\nThe JSON must exactly match this schema:"
                 + "\n" + schema_desc
             )
+        extra_body = dict(self.model_extra_body or {})
+        model_name = getattr(self.model, "model", "").lower()
+        if "glm" in model_name:
+            extra_body.setdefault("chat_template_kwargs", {}).setdefault(
+                "enable_thinking", self.enable_thinking
+            )
+
         agent = Agent(
             name=self.node_name,
             instructions=prompt,
             model=self.model,
-            model_settings=ModelSettings(extra_body=self.model_extra_body or None),
+            model_settings=ModelSettings(extra_body=extra_body or None),
             output_type=AgentOutputSchema(self.output_type, strict_json_schema=False),
         )
         ctx.run_logger.log("node_start", {"node": self.node_name, "payload": payload})
