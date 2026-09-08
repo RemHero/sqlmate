@@ -39,8 +39,6 @@
 
 ### 参考
 
-- `INTRANET_SETUP.md`
-  - 内外网同步、模型网关配置、Python/OpenSSL 与内部 PyPI 安装说明
 - `KNOWN_ISSUES.md`
   - 已知问题与未来设计（知识检索时机等）
 - `MODEL_CAPABILITIES_TODO.md`

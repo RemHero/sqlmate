@@ -55,8 +55,8 @@ class ProviderRegistry:
     def _get_http_client(self, verify_ssl: bool) -> httpx.AsyncClient:
         """按证书校验策略复用 HTTP client。
 
-        公网 provider 默认校验证书；只有明确配置 ``verify_ssl: false`` 的
-        内网自签名网关才关闭校验。
+        默认校验证书；只有明确配置 ``verify_ssl: false`` 的 provider
+        才关闭校验。
         """
         if verify_ssl not in self._http_clients:
             self._http_clients[verify_ssl] = httpx.AsyncClient(verify=verify_ssl)
