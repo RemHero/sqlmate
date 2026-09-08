@@ -7,3 +7,9 @@ logs/*.log
 output/
 .claude/
 
+# Local source material and deployment notes must not be published.
+/.local-notes/
+/docs/change.md
+/docs/change.diff
+/docs/INTRANET*.md
+/docs/CORE_STAGED_EXECUTION_DESIGN.md

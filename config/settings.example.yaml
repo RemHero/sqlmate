@@ -49,21 +49,21 @@ ui:
 providers:
   ark_primary:
     base_url: https://api.deepseek.com
-    api_key: sk-c5a7489adee5470cbb9cebb2b46bef6d
+    api_key: ${SQLMATE_PRIMARY_API_KEY:-}
     model: deepseek-v4-pro
     use_responses: false
     timeout_seconds: 180
     max_retries: 2
   ark_secondary:
     base_url: https://ark.cn-beijing.volces.com/api/v3
-    api_key: 52ee9976-477b-4239-acec-100353207151
+    api_key: ${SQLMATE_SECONDARY_API_KEY:-}
     model: doubao-seed-2-0-pro-260215
     use_responses: false
     timeout_seconds: 180
     max_retries: 2
   ark_glm:
     base_url: https://open.bigmodel.cn/api/paas/v4/
-    api_key: 769003e302f94f2fbce5a7508885237e.a0IPFQpoxbKowyNi
+    api_key: ${SQLMATE_GLM_API_KEY:-}
     model: glm-5.1
     use_responses: false
     timeout_seconds: 180
