@@ -39,12 +39,6 @@
 
 ### 参考
 
-- [INTRANET_LLM_ADAPTATION.md](INTRANET_LLM_ADAPTATION.md)
-  - 结合内网修改说明和 diff 总结模型网关、thinking、TLS、SDK 与运行环境适配
-- [CORE_STAGED_EXECUTION_DESIGN.md](CORE_STAGED_EXECUTION_DESIGN.md)
-  - 单次推理 20 分钟限制下的 CORE 分阶段方案 v2（设计提案，尚未实现）
-- `INTRANET_SETUP.md`
-  - 内外网同步、模型网关配置、Python/OpenSSL 与内部 PyPI 安装说明
 - `KNOWN_ISSUES.md`
   - 已知问题与未来设计（知识检索时机等）
 - `MODEL_CAPABILITIES_TODO.md`

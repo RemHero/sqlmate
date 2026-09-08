@@ -35,7 +35,7 @@ class _StreamResult:
             yield None
 
 
-class IntranetAdaptationTests(unittest.TestCase):
+class ProviderCompatibilityTests(unittest.TestCase):
     def test_provider_http_clients_follow_ssl_policy_and_are_reused(self) -> None:
         registry = ProviderRegistry({})
         verified_client = object()

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SqlMate 可移植安装脚本：同时支持公网 PyPI 与内网镜像/自备 OpenSSL。
+# SqlMate 可移植安装脚本：支持自定义包索引和 OpenSSL 路径。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,7 +52,7 @@ build_python() {
     make install
   )
 
-  # 部分内网构建环境在 make 阶段找不到动态库，会把可用扩展标为 _failed.so。
+  # make 阶段找不到动态库时，构建过程可能把扩展标为 _failed.so。
   local dynload="$prefix/lib/python3.10/lib-dynload"
   local failed
   for failed in "$source_dir"/build/lib.*/_ssl*_failed.so "$source_dir"/build/lib.*/_hashlib*_failed.so; do
